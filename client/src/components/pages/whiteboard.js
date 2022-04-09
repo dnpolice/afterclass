@@ -1,24 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { PhotoshopPicker } from 'react-color';
 
-// class Lines {
-//     constructor(prevX, prevY, x, y) {
-//         this.prevX = x,
-//         this.prevY = prevY,
-//         this.x = prev.y,
-//         this.y = prev
-//     }
-// }
-
 const Whiteboard = () => {
     const canvasRef = useRef(null);
     const context = useRef(null);
 
     const [mouseDown, setMouseDown] = useState(false);
-    const [drawingColor, setDrawingColor] = useState("#FFFFFF");
+    const [drawingColor, setDrawingColor] = useState("#000000");
     const [lastBufferTime, setLastBufferTime] = useState(undefined);
     const [bufferedMoves, setBufferedMoves] = useState([]);
     const [openColorPicker, setOpenColorPicker] = useState(false);
+    const [backgroundColor, setBackgroundColor] = useState("#FFFFFF");
     const [prevPosition, setPrevPosition] = useState({
         x: undefined,
         y: undefined
@@ -36,19 +28,27 @@ const Whiteboard = () => {
         const date = new Date();
         if (mouseDown && !openColorPicker && date.getTime() - lastBufferTime > 10) {
             context.current.strokeStyle = drawingColor;
-            context.current.lineWidth = 10;
+            context.current.lineWidth = getDrawingWidth();
             context.current.lineJoin = "round";
             context.current.beginPath();
             context.current.moveTo(prevPosition.x, prevPosition.y);
-            console.log(prevPosition);
-            console.log(x, y);
             context.current.lineTo(x, y);
             context.current.closePath();
             context.current.stroke();
 
-            bufferedMoves.push([prevPosition.x, prevPosition.y, x, y]);
+            const line = getLineJson(prevPosition.x, prevPosition.y, x, y);
+            setBufferedMoves(prevBufferedMoves => [...prevBufferedMoves, line]);
             setPrevPosition({x, y});
             setLastBufferTime(date.getTime());
+        }
+    }
+
+    const getLineJson = (startingPositionX, startingPositionY, finalPositionX, finalPositionY) => {
+        return {
+            startingPositionX,
+            startingPositionY,
+            finalPositionX,
+            finalPositionY
         }
     }
 
@@ -76,8 +76,29 @@ const Whiteboard = () => {
     }
     
     const sendBufferList = () => {
+        console.log(bufferedMoves);
+
         setBufferedMoves([]);
     };
+
+    const toggleBackgroundColor = () => {
+        if (backgroundColor === "#FFFFFF") {
+            setBackgroundColor("#000000");
+            if (drawingColor === "#000000") setDrawingColor("#FFFFFF");
+        } else {
+            setBackgroundColor("#FFFFFF");
+            if (drawingColor === "#FFFFFF") setDrawingColor("#000000");
+        }
+    }
+
+    const getDrawingWidth = () => {
+        if (context.current.globalCompositeOperation === 'source-over') return 10;
+        return 72;
+    }
+
+    const setToDraw = () => { context.current.globalCompositeOperation = 'source-over' }
+
+    const setToErase = () => { context.current.globalCompositeOperation = 'destination-out' }
     
 
     return (
@@ -89,6 +110,7 @@ const Whiteboard = () => {
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
+                style={{backgroundColor: backgroundColor}}
             />
             {openColorPicker ?
                 <div id="colorPicker">
@@ -99,7 +121,16 @@ const Whiteboard = () => {
                 </div>
                 : null
             }
-            <div id="sideBar">
+            <div className="sidebar">
+                <ul>
+                    <li onClick={() => setToDraw()}>Pencil</li>
+                    <li onClick={() => setToErase()}>Eraser</li>
+                    <li>Color</li>
+                    <li>Width</li>
+                    <li onClick={() => toggleBackgroundColor()}>Mode</li>
+                </ul>
+            </div>     
+            {/* <div id="sideBar">
                 <div onClick={() => setOpenColorPicker(true)}>
                 </div>
                 <div>
@@ -108,7 +139,7 @@ const Whiteboard = () => {
                 <div>
                     
                 </div>
-            </div>
+            </div> */}
         </div>
     )
 }
