@@ -1,14 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { PhotoshopPicker } from 'react-color';
+const room = 1234;
 
-const Whiteboard = () => {
+const Whiteboard = ({socket}) => {
     const canvasRef = useRef(null);
     const context = useRef(null);
+    const bufferedMoves = useRef([]);
 
     const [mouseDown, setMouseDown] = useState(false);
     const [drawingColor, setDrawingColor] = useState("#000000");
     const [lastBufferTime, setLastBufferTime] = useState(undefined);
-    const [bufferedMoves, setBufferedMoves] = useState([]);
     const [openColorPicker, setOpenColorPicker] = useState(false);
     const [backgroundColor, setBackgroundColor] = useState("#FFFFFF");
     const [prevPosition, setPrevPosition] = useState({
@@ -21,10 +22,80 @@ const Whiteboard = () => {
             context.current = canvasRef.current.getContext('2d');
             canvasRef.current.width = window.innerWidth;
             canvasRef.current.height = window.innerHeight;
+            joinRoom();
         }
     }, [])
+    
+    useEffect(() => {
+        lineSocketListener();
+    }, [backgroundColor])
+
+    //TODO move this code
+    const joinRoom = async () => {
+        socket.emit('join', { room });
+    }
+
+    const lineSocketListener = async () => {
+        try {
+            socket.removeListener('sendLines');
+        } catch (error) {
+            
+        }
+
+        socket.on('sendLines', (lines) => {
+            drawExternalLines(lines);
+        });
+    }
+
+    const drawExternalLines = (lines) => {
+        console.log(lines);
+        for (const line of lines) {
+            drawExternalLine(
+                line.startingPositionX,
+                line.startingPositionY,
+                line.finalPositionX,
+                line.finalPositionY,
+                line.drawingColor,
+                line.drawingWidth,
+                line.eraserOn
+            )
+        }
+    }
+
+    const drawExternalLine = (
+        startingPositionX,
+        startingPositionY,
+        finalPositionX,
+        finalPositionY,
+        drawingColor,
+        drawingWidth,
+        eraserOn
+    ) => {
+        let applicationEraserState = context.current.globalCompositeOperation;
+        if (eraserOn === false) context.current.globalCompositeOperation = 'source-over';
+        else context.current.globalCompositeOperation = 'destination-out';
+        
+        if (drawingColor === backgroundColor) {
+            console.log(drawingColor);
+            console.log(backgroundColor);
+            if (drawingColor === "#FFFFFF") drawingColor = "#000000";
+            else drawingColor = "#FFFFFF";
+        }
+
+        context.current.strokeStyle = drawingColor;
+        context.current.lineWidth = drawingWidth;
+        context.current.lineJoin = "round";
+        context.current.beginPath();
+        context.current.moveTo(startingPositionX, startingPositionY);
+        context.current.lineTo(finalPositionX, finalPositionY);
+        context.current.closePath();
+        context.current.stroke();
+
+        context.current.globalCompositeOperation = applicationEraserState;
+    }
 
     const drawLine = (x, y) => {
+        console.log(backgroundColor);
         const date = new Date();
         if (mouseDown && !openColorPicker && date.getTime() - lastBufferTime > 10) {
             context.current.strokeStyle = drawingColor;
@@ -35,20 +106,26 @@ const Whiteboard = () => {
             context.current.lineTo(x, y);
             context.current.closePath();
             context.current.stroke();
+            
+            let eraserOn = false;
+            if (context.current.globalCompositeOperation !== 'source-over') eraserOn = true;
 
-            const line = getLineJson(prevPosition.x, prevPosition.y, x, y);
-            setBufferedMoves(prevBufferedMoves => [...prevBufferedMoves, line]);
+            const line = getLineJson(prevPosition.x, prevPosition.y, x, y, drawingColor, getDrawingWidth(), eraserOn);
+            bufferedMoves.current.push(line);
             setPrevPosition({x, y});
             setLastBufferTime(date.getTime());
         }
     }
 
-    const getLineJson = (startingPositionX, startingPositionY, finalPositionX, finalPositionY) => {
+    const getLineJson = (startingPositionX, startingPositionY, finalPositionX, finalPositionY, drawingColor, drawingWidth, eraserOn) => {
         return {
             startingPositionX,
             startingPositionY,
             finalPositionX,
-            finalPositionY
+            finalPositionY,
+            drawingColor,
+            drawingWidth,
+            eraserOn
         }
     }
 
@@ -62,12 +139,12 @@ const Whiteboard = () => {
 
     const onMouseMove = event => {
         drawLine(event.pageX, event.pageY);
-        if (bufferedMoves.length > 10) sendBufferList();
+        if (bufferedMoves.current.length >= 10) sendBufferList();
     }
 
     const onMouseUp = event => {
         setMouseDown(false);
-        if (bufferedMoves.length > 0) sendBufferList();
+        if (bufferedMoves.current.length > 0) sendBufferList();
     }
 
     const changeDrawingColor = color => {
@@ -76,9 +153,11 @@ const Whiteboard = () => {
     }
     
     const sendBufferList = () => {
-        console.log(bufferedMoves);
-
-        setBufferedMoves([]);
+        socket.emit('sendLines', { 
+            room: room, 
+            lines: bufferedMoves.current
+    });
+        bufferedMoves.current = [];
     };
 
     const toggleBackgroundColor = () => {
